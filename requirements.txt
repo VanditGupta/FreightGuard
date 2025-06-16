@@ -1,0 +1,32 @@
+# Core dependencies
+kafka-python
+apache-airflow
+psycopg2-binary
+streamlit
+pandas
+numpy
+sqlalchemy
+
+# Machine Learning
+scikit-learn
+joblib
+
+# Dashboard and Visualization
+plotly
+pydeck
+folium
+streamlit-folium
+
+# Utilities
+python-dotenv
+requests
+schedule
+slack-sdk
+
+# Development
+pytest
+black
+flake8
+
+# Docker
+gunicorn

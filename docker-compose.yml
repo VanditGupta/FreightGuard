@@ -1,0 +1,173 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: delay_detection_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: delay_detection
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - delay_detection_network
+
+  # Apache Kafka & Zookeeper
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: delay_detection_zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - delay_detection_network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: delay_detection_kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - delay_detection_network
+
+  # Kafka Producer
+  kafka_producer:
+    build:
+      context: .
+      dockerfile: Dockerfile.producer
+    container_name: delay_detection_producer
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_TOPIC: shipment_updates
+      NUM_SHIPMENTS: 50
+      UPDATE_INTERVAL: 30
+    volumes:
+      - .:/app
+    networks:
+      - delay_detection_network
+    restart: unless-stopped
+
+  # Apache Airflow
+  airflow-webserver:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    container_name: delay_detection_airflow
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql://postgres:password@postgres:5432/shipment_tracking
+      AIRFLOW__WEBSERVER__SECRET_KEY: your-secret-key-here
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/shipment_tracking
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_TOPIC: shipment_updates
+      ML_MODEL_PATH: /opt/airflow/ml/models/delay_predictor.joblib
+      PREDICTION_THRESHOLD: 0.7
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./ml:/opt/airflow/ml
+      - ./utils:/opt/airflow/utils
+      - airflow_logs:/opt/airflow/logs
+    command: >
+      bash -c "
+        airflow db init &&
+        airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com &&
+        airflow webserver --port 8080 &
+        airflow scheduler
+      "
+    networks:
+      - delay_detection_network
+    restart: unless-stopped
+
+  # Streamlit Dashboard
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    container_name: delay_detection_dashboard
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/delay_detection
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./dashboard:/app/dashboard
+      - ./.env:/app/.env
+    networks:
+      - delay_detection_network
+    restart: unless-stopped
+
+  # ML Model Training (run once)
+  ml_trainer:
+    build:
+      context: .
+      dockerfile: Dockerfile.ml
+    container_name: delay_detection_ml_trainer
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/shipment_tracking
+      ML_MODEL_PATH: /app/ml/models/delay_predictor.joblib
+    volumes:
+      - ./ml:/app/ml
+      - ./.env:/app/.env
+    command: python ml/train_model.py
+    networks:
+      - delay_detection_network
+    profiles:
+      - training  # Only run when explicitly requested
+
+volumes:
+  postgres_data:
+  airflow_logs:
+
+networks:
+  delay_detection_network:
+    driver: bridge
+
+# Health check endpoints
+# - PostgreSQL: localhost:5432
+# - Kafka: localhost:9092
+# - Airflow: http://localhost:8080 (admin/admin)
+# - Streamlit: http://localhost:8501
