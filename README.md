@@ -151,3 +151,9 @@ python tests/test_ml_pipeline.py
 ## 📄 License
 
 MIT License - see LICENSE file for details.
+
+## 📷 Dashboard Screenshot
+
+![Dashboard Overview](dashboard.jpg)
+
+_A sample of the real-time analytics dashboard showing shipment risk, delay probability, and activity timeline._
