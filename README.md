@@ -10,6 +10,12 @@ A production-ready real-time supply chain monitoring system that predicts shipme
 - **Intelligent Alerting**: Automated escalation system for high-risk deliveries
 - **Production Ready**: Docker containerized with proper logging and error handling
 
+## 📷 Dashboard
+
+![Dashboard Overview](dashboard.jpg)
+
+_A sample of the real-time analytics dashboard showing shipment risk, delay probability, and activity timeline._
+
 ## 🏗️ Architecture
 
 ```
@@ -151,9 +157,3 @@ python tests/test_ml_pipeline.py
 ## 📄 License
 
 MIT License - see LICENSE file for details.
-
-## 📷 Dashboard Screenshot
-
-![Dashboard Overview](dashboard.jpg)
-
-_A sample of the real-time analytics dashboard showing shipment risk, delay probability, and activity timeline._
